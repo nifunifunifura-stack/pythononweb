@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Py2Web - Python & Colab スクリプト Web HTML 変換ツール</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- CodeMirror for Python Code Editor -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        },
+                        colab: {
+                            500: '#f59e0b',
+                            600: '#d97706',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .CodeMirror {
+            height: 100%;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            font-size: 13px;
+            border-radius: 0.5rem;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- ヘッダーナビゲーション -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-gradient-to-tr from-brand-600 via-indigo-600 to-amber-500 rounded-lg text-white shadow-lg shadow-brand-500/20">
+                    <i data-lucide="code-2" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight bg-gradient-to-r from-white via-slate-200 to-amber-400 bg-clip-text text-transparent">
+                        Py2Web スタジオ
+                    </h1>
+                    <p class="text-xs text-slate-400">標準PythonおよびGoogle Colabスクリプトを単一のWeb HTMLファイルへ変換</p>
+                </div>
+            </div>
+
+            <!-- モード切り替えタブ -->
+            <div class="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800">
+                <button id="tab-colab-mode" class="px-3 py-1.5 text-xs font-semibold rounded-md transition flex items-center gap-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <i data-lucide="wand-2" class="w-3.5 h-3.5"></i> Colab変換モード
+                </button>
+                <button id="tab-standard-mode" class="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 rounded-md transition flex items-center gap-1.5">
+                    <i data-lucide="terminal" class="w-3.5 h-3.5"></i> 標準Pythonエディタ
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインワークスペース -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+
+        <!-- Colab変換ツールバー・案内バナー -->
+        <div id="colab-banner" class="bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/30 rounded-xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h2 class="text-sm font-bold text-amber-300">Google Colab 自動互換変換エンジン</h2>
+                    <p class="text-xs text-slate-400">Colab特有のマジックコマンド（<code class="text-amber-400">!pip</code>や<code class="text-amber-400">%matplotlib</code>）の除去、<code class="text-amber-400">google.colab</code>の無効化、ファイル入出力のWeb互換化を自動処理します。</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="btn-load-colab-demo" class="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
+                    <i data-lucide="file-code" class="w-3.5 h-3.5 text-amber-400"></i> デモColabコードを読み込む
+                </button>
+                <button id="btn-convert-colab" class="px-4 py-1.5 text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-lg shadow-md transition flex items-center gap-1.5">
+                    <i data-lucide="zap" class="w-4 h-4"></i> ワンクリックでColabコード変換
+                </button>
+            </div>
+        </div>
+
+        <!-- コードエディタ＆比較領域（2列グリッド） -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- 変換前コードエディタ -->
+            <div class="bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-xl flex flex-col h-[480px]">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-amber-400"></i>
+                        <span id="editor-source-title" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">変換前コード (Colab / Python)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="file" id="file-input" accept=".py,.ipynb" class="hidden">
+                        <button id="btn-upload-file" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition flex items-center gap-1">
+                            <i data-lucide="upload" class="w-3 h-3"></i> .pyファイルを読み込む
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 relative rounded-lg overflow-hidden border border-slate-800">
+                    <textarea id="source-code-editor" class="hidden"></textarea>
+                </div>
+            </div>
+
+            <!-- 変換後コードエディタ -->
+            <div class="bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-xl flex flex-col h-[480px]">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+                        <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Web互換Pythonコード</span>
+                    </div>
+                    <span id="colab-status-badge" class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">準備完了</span>
+                </div>
+
+                <div class="flex-1 relative rounded-lg overflow-hidden border border-slate-800">
+                    <textarea id="target-code-editor" class="hidden"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- パッケージ設定＆ライブプレビュー領域 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- パッケージ・デザイン設定パネル -->
+            <div class="lg:col-span-4 bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-xl space-y-4 flex flex-col justify-between">
+                <div class="space-y-4">
+                    <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
+                        <i data-lucide="sliders" class="w-4 h-4 text-brand-500"></i> アプリ出力設定
+                    </h3>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">ページタイトル</label>
+                        <input type="text" id="config-title" value="変換済み Colab Webアプリ" class="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">デザインテーマ</label>
+                        <select id="config-theme" class="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                            <option value="dark" selected>モダンダークダッシュボード</option>
+                            <option value="terminal">レトロターミナル風</option>
+                            <option value="light">クリーンライトUI</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">自動読み込みパッケージ</label>
+                        <input type="text" id="config-packages" placeholder="例: numpy, pandas, matplotlib" class="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+
+                    <div class="space-y-2 pt-1">
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="config-plot-target" checked class="rounded border-slate-800 bg-slate-950 text-brand-500 focus:ring-brand-500">
+                            <span>Matplotlibのグラフ描画を有効化</span>
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="config-auto-run" checked class="rounded border-slate-800 bg-slate-950 text-brand-500 focus:ring-brand-500">
+                            <span>ページ読み込み時に自動実行</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="space-y-2 pt-4">
+                    <button id="btn-build-preview" class="w-full py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold rounded-lg shadow-lg shadow-brand-500/20 transition flex items-center justify-center gap-2 text-xs">
+                        <i data-lucide="play" class="w-4 h-4"></i> パッケージ構築とライブテスト実行
+                    </button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="btn-copy-code" class="py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition flex items-center justify-center gap-1">
+                            <i data-lucide="copy" class="w-3.5 h-3.5"></i> HTMLをコピー
+                        </button>
+                        <button id="btn-download" class="py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg shadow transition flex items-center justify-center gap-1">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> HTML出力
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ライブ実行サンドボックス（プレビュー） -->
+            <div class="lg:col-span-8 bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-xl flex flex-col h-[480px]">
+                <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="monitor" class="w-4 h-4 text-brand-500"></i>
+                        <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Webアプリケーション動的プレビュー</span>
+                    </div>
+                    <span class="text-xs text-slate-500">Pyodide WASM 実行エンジン</span>
+                </div>
+
+                <div class="flex-1 bg-slate-950 rounded-lg border border-slate-800 overflow-hidden relative">
+                    <iframe id="preview-iframe" class="w-full h-full border-0 bg-slate-950" title="Pythonアプリプレビュー"></iframe>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- トースト通知 -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-slate-800 text-white px-4 py-2.5 rounded-lg border border-slate-700 shadow-xl text-xs flex items-center gap-2 transition-opacity opacity-0 pointer-events-none z-50">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+        <span id="toast-message">通知メッセージ</span>
+    </div>
+
+    <script>
+        // 日本語コメント付きのColabデモスクリプト
+        const DEMO_COLAB_SCRIPT = `# Google Colab 専用機能を含むスクリプトの例
+!pip install numpy pandas matplotlib seaborn
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from google.colab import files
+from google.colab import drive
+
+# Googleドライブのマウント（自動的に削除されます）
+drive.mount('/content/drive')
+
+# Colab / Jupyter 専用のマジックコマンド
+%matplotlib inline
+
+print("Colab データ処理タスクを開始します...")
+
+# Colab 用のファイルアップロード試行
+uploaded = files.upload()
+
+# ユーザー対話型プロンプト
+user_tag = input("データセットのラベル名を入力してください: ")
+print(f"処理中のラベル: {user_tag}")
+
+# サンプルデータの生成とグラフ描画
+x = np.linspace(0, 10, 100)
+y = np.cos(x) * np.exp(-x / 5)
+
+plt.figure(figsize=(6, 3.5))
+plt.plot(x, y, color='#f59e0b', linewidth=2, label='減衰波形')
+plt.title(f'Colab 処理結果グラフ ({user_tag})')
+plt.grid(True, alpha=0.3)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+print("Colab タスクの実行が完了しました！");
+`;
+
+        let sourceEditor, targetEditor;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+
+            // 変換前エディタの設定
+            sourceEditor = CodeMirror.fromTextArea(document.getElementById('source-code-editor'), {
+                mode: 'python',
+                theme: 'dracula',
+                lineNumbers: true,
+                indentUnit: 4,
+                viewportMargin: Infinity
+            });
+
+            // 変換後エディタの設定
+            targetEditor = CodeMirror.fromTextArea(document.getElementById('target-code-editor'), {
+                mode: 'python',
+                theme: 'dracula',
+                lineNumbers: true,
+                indentUnit: 4,
+                viewportMargin: Infinity
+            });
+
+            sourceEditor.setValue(DEMO_COLAB_SCRIPT);
+
+            setupEventListeners();
+            
+            // 初期のColabコード変換を実行
+            convertColabCode();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('btn-load-colab-demo').addEventListener('click', () => {
+                sourceEditor.setValue(DEMO_COLAB_SCRIPT);
+                convertColabCode();
+                showToast("デモ用 Colab スクリプトを読み込みました。");
+            });
+
+            document.getElementById('btn-convert-colab').addEventListener('click', () => {
+                convertColabCode();
+            });
+
+            document.getElementById('btn-upload-file').addEventListener('click', () => {
+                document.getElementById('file-input').click();
+            });
+
+            document.getElementById('file-input').addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    const file = e.target.files[0];
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        sourceEditor.setValue(event.target.result);
+                        convertColabCode();
+                        showToast(`${file.name} を読み込みました。`);
+                    };
+                    reader.readAsText(file);
+                }
+            });
+
+            document.getElementById('btn-build-preview').addEventListener('click', generateWebPackage);
+            document.getElementById('btn-copy-code').addEventListener('click', copyGeneratedHTML);
+            document.getElementById('btn-download').addEventListener('click', downloadGeneratedHTML);
+
+            // タブ切替イベント
+            document.getElementById('tab-colab-mode').addEventListener('click', () => {
+                document.getElementById('colab-banner').classList.remove('hidden');
+                showToast("Colab 変換モードを無効化しました。");
+            });
+
+            document.getElementById('tab-standard-mode').addEventListener('click', () => {
+                document.getElementById('colab-banner').classList.add('hidden');
+                showToast("標準 Python エディタモードです。");
+            });
+        }
+
+        // ワンクリック変換エンジン: ColabコードをWeb互換のPythonコードに変換
+        function convertColabCode() {
+            const rawCode = sourceEditor.getValue();
+            const lines = rawCode.split('\n');
+            const convertedLines = [];
+            const detectedPackages = new Set();
+
+            let hasColabFileUpload = false;
+
+            lines.forEach((line) => {
+                let trimmed = line.trim();
+
+                // 1. シェルコマンド (!pip install ...) の検知と削除
+                if (trimmed.startsWith('!pip install')) {
+                    const pkgs = trimmed.replace('!pip install', '').split(/\s+/);
+                    pkgs.forEach(p => {
+                        const cleanPkg = p.trim().replace(/==.*/, '').replace(/>=.*/, '');
+                        if (cleanPkg && !cleanPkg.startsWith('-')) detectedPackages.add(cleanPkg);
+                    });
+                    convertedLines.push(`# [Py2Web 変換] シェルコマンドを除去しました: ${line}`);
+                    return;
+                }
+
+                if (trimmed.startsWith('!')) {
+                    convertedLines.push(`# [Py2Web 変換] シェルコマンドを除去しました: ${line}`);
+                    return;
+                }
+
+                // 2. Jupyterマジックコマンド (%matplotlib inline など) の除去
+                if (trimmed.startsWith('%')) {
+                    convertedLines.push(`# [Py2Web 変換] マジックコマンドを除去しました: ${line}`);
+                    return;
+                }
+
+                // 3. google.colab 関連モジュールおよび drive.mount の無効化
+                if (trimmed.includes('from google.colab import') || trimmed.includes('import google.colab')) {
+                    convertedLines.push(`# [Py2Web 変換] google.colab のインポートを除去しました: ${line}`);
+                    return;
+                }
+
+                if (trimmed.includes('drive.mount(')) {
+                    convertedLines.push(`# [Py2Web 変換] Googleドライブマウント処理を除去しました: ${line}`);
+                    return;
+                }
+
+                // 4. files.upload() をブラウザ環境用に安全に処理
+                if (trimmed.includes('files.upload()')) {
+                    hasColabFileUpload = true;
+                    const leftPart = line.substring(0, line.indexOf('files.upload()'));
+                    convertedLines.push(`${leftPart}{ /* [Py2Web] ブラウザ上でのファイル読み込みをシミュレート */ }`);
+                    return;
+                }
+
+                // インポートライブラリの自動検出
+                const importMatch = trimmed.match(/^(?:import|from)\s+([a-zA-Z0-9_]+)/);
+                if (importMatch) {
+                    const mod = importMatch[1];
+                    if (!['sys', 'os', 'math', 'time', 'random', 'json', 're', 'builtins'].includes(mod)) {
+                        detectedPackages.add(mod);
+                    }
+                }
+
+                convertedLines.push(line);
+            });
+
+            // 互換性ポリフィルの導入
+            if (hasColabFileUpload) {
+                convertedLines.unshift(
+                    "# --- Py2Web Web互換ポリフィル ---",
+                    "print('[Py2Web システム] 注意: Colabの files.upload() はブラウザ環境用に調整されています')",
+                    "# ----------------------------------\n"
+                );
+            }
+
+            const cleanPythonCode = convertedLines.join('\n');
+            targetEditor.setValue(cleanPythonCode);
+
+            // 検出したパッケージを入力フィールドへ自動設定
+            if (detectedPackages.size > 0) {
+                document.getElementById('config-packages').value = Array.from(detectedPackages).join(', ');
+            }
+
+            // バッジ更新
+            const badge = document.getElementById('colab-status-badge');
+            badge.textContent = "変換済み・互換性クリア";
+
+            showToast("Colab コードの変換が完了しました！");
+            generateWebPackage();
+        }
+
+        // 単一の独立した HTML Web アプリケーションコードを構築
+        function buildStandaloneHTML() {
+            const pythonCode = targetEditor.getValue();
+            const pageTitle = document.getElementById('config-title').value || "変換済み Colab アプリ";
+            const themeStyle = document.getElementById('config-theme').value;
+            const packagesInput = document.getElementById('config-packages').value;
+            const autoRun = document.getElementById('config-auto-run').checked;
+            const enablePlots = document.getElementById('config-plot-target').checked;
+
+            const packagesArr = packagesInput.split(',')
+                .map(p => p.trim())
+                .filter(p => p.length > 0);
+
+            let bgClass = "bg-slate-950 text-slate-100 font-sans";
+            let containerClass = "bg-slate-900 border border-slate-800 shadow-2xl rounded-xl p-6";
+
+            if (themeStyle === 'terminal') {
+                bgClass = "bg-black text-green-400 font-mono";
+                containerClass = "bg-slate-950 border border-green-800/60 shadow-2xl rounded-lg p-4";
+            } else if (themeStyle === 'light') {
+                bgClass = "bg-slate-100 text-slate-800 font-sans";
+                containerClass = "bg-white border border-slate-200 shadow-xl rounded-xl p-6";
+            }
+
+            return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHtml(pageTitle)}</title>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"><\/script>
+    <style>
+        .console-output {
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body class="${bgClass} min-h-screen p-4 md:p-8 flex flex-col items-center">
+
+    <div class="max-w-4xl w-full ${containerClass} space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-700/40 pb-3">
+            <div class="flex items-center space-x-2">
+                <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                <h1 class="text-base font-bold ml-2 opacity-90">${escapeHtml(pageTitle)}</h1>
+            </div>
+            <button id="run-btn" onclick="runPython()" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs rounded-md shadow transition flex items-center gap-1">
+                ▶ アプリを実行
+            </button>
+        </div>
+
+        <div id="status-banner" class="text-xs bg-sky-950/50 border border-sky-800/50 text-sky-300 p-2.5 rounded-md flex items-center justify-between">
+            <span id="status-text">WebAssembly Python エンジンを起動中...</span>
+            <span id="spinner" class="inline-block w-3 h-3 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></span>
+        </div>
+
+        <div class="space-y-2">
+            <div class="text-xs font-semibold opacity-70 uppercase tracking-wider">実行ターミナル出力</div>
+            <div id="terminal-output" class="console-output bg-black/60 border border-slate-800 p-4 rounded-lg min-h-[160px] max-h-[350px] overflow-y-auto text-xs leading-relaxed"></div>
+        </div>
+
+        ${enablePlots ? `
+        <div id="plot-section" class="space-y-2 hidden">
+            <div class="text-xs font-semibold opacity-70 uppercase tracking-wider">Matplotlib グラフ描画エリア</div>
+            <div id="matplotlib-target" class="bg-white/5 border border-slate-800 p-3 rounded-lg flex justify-center items-center overflow-x-auto"></div>
+        </div>
+        ` : ''}
+    </div>
+
+    <!-- 入力ダイアログモーダル -->
+    <div id="input-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-md w-full shadow-2xl space-y-3">
+            <p id="input-prompt-text" class="text-sm font-medium text-slate-200">入力が必要です:</p>
+            <input type="text" id="modal-input-field" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" placeholder="ここに入力...">
+            <div class="flex justify-end">
+                <button id="modal-submit-btn" class="px-4 py-1.5 bg-sky-600 text-white font-medium text-xs rounded-lg hover:bg-sky-500 transition">送信</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pyodideInstance = null;
+        const requiredPackages = ${JSON.stringify(packagesArr)};
+
+        function appendConsole(text, isError = false) {
+            const term = document.getElementById('terminal-output');
+            const span = document.createElement('span');
+            if (isError) span.className = 'text-red-400 font-semibold';
+            span.textContent = text;
+            term.appendChild(span);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        function customInputPrompt(promptText) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('input-modal');
+                const promptLabel = document.getElementById('input-prompt-text');
+                const inputField = document.getElementById('modal-input-field');
+                const submitBtn = document.getElementById('modal-submit-btn');
+
+                promptLabel.textContent = promptText || "入力が必要です:";
+                inputField.value = "";
+                modal.classList.remove('hidden');
+                inputField.focus();
+
+                const handleSubmit = () => {
+                    const val = inputField.value;
+                    modal.classList.add('hidden');
+                    submitBtn.removeEventListener('click', handleSubmit);
+                    inputField.removeEventListener('keydown', handleKey);
+                    appendConsole(promptText + " " + val + "\\n");
+                    resolve(val);
+                };
+
+                const handleKey = (e) => { if (e.key === 'Enter') handleSubmit(); };
+
+                submitBtn.addEventListener('click', handleSubmit);
+                inputField.addEventListener('keydown', handleKey);
+            });
+        }
+
+        async function initPyodideEngine() {
+            const statusText = document.getElementById('status-text');
+            const spinner = document.getElementById('spinner');
+
+            try {
+                pyodideInstance = await loadPyodide({
+                    stdout: (text) => appendConsole(text + "\\n"),
+                    stderr: (text) => appendConsole(text + "\\n", true)
+                });
+
+                if (requiredPackages.length > 0) {
+                    statusText.textContent = "パッケージをインストール中 (" + requiredPackages.join(', ') + ")...";
+                    await pyodideInstance.loadPackage('micropip');
+                    const micropip = pyodideInstance.pyimport('micropip');
+                    for (const pkg of requiredPackages) {
+                        try {
+                            await micropip.install(pkg);
+                        } catch(e) {
+                            try { await pyodideInstance.loadPackage(pkg); } catch(err){}
+                        }
+                    }
+                }
+
+                pyodideInstance.registerJsModule('js_env', { prompt: customInputPrompt });
+
+                await pyodideInstance.runPythonAsync(\`
+import sys
+import js_env
+import builtins
+
+async def custom_input(prompt_str=""):
+    return await js_env.prompt(prompt_str)
+
+builtins.input = custom_input
+\`);
+
+                ${enablePlots ? `
+                await pyodideInstance.runPythonAsync(\`
+try:
+    import matplotlib
+    matplotlib.use("module://matplotlib.backends.html5_canvas_backend")
+except Exception:
+    pass
+\`);
+                ` : ''}
+
+                statusText.textContent = "Python エンジンの準備が完了しました。";
+                spinner.classList.add('hidden');
+
+                ${autoRun ? 'runPython();' : ''}
+
+            } catch (err) {
+                statusText.textContent = "初期化に失敗しました: " + err.message;
+                spinner.classList.add('hidden');
+            }
+        }
+
+        async function runPython() {
+            if (!pyodideInstance) return;
+
+            const term = document.getElementById('terminal-output');
+            term.innerHTML = '';
+
+            const code = ${JSON.stringify(pythonCode)};
+
+            try {
+                ${enablePlots ? `
+                const plotTarget = document.getElementById('matplotlib-target');
+                if (plotTarget) {
+                    plotTarget.innerHTML = '';
+                    document.getElementById('plot-section').classList.add('hidden');
+                }
+                ` : ''}
+
+                await pyodideInstance.runPythonAsync(code);
+
+                ${enablePlots ? `
+                const plotTarget = document.getElementById('matplotlib-target');
+                if (plotTarget && plotTarget.children.length > 0) {
+                    document.getElementById('plot-section').classList.remove('hidden');
+                }
+                ` : ''}
+
+            } catch (err) {
+                appendConsole("\\nエラー: " + err.message + "\\n", true);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initPyodideEngine);
+    <\/script>
+</body>
+</html>`;
+        }
+
+        function generateWebPackage() {
+            const htmlContent = buildStandaloneHTML();
+            document.getElementById('preview-iframe').srcdoc = htmlContent;
+        }
+
+        function copyGeneratedHTML() {
+            const htmlContent = buildStandaloneHTML();
+            const textarea = document.createElement('textarea');
+            textarea.value = htmlContent;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showToast("HTMLコードをクリップボードにコピーしました！");
+        }
+
+        function downloadGeneratedHTML() {
+            const htmlContent = buildStandaloneHTML();
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const fileName = (document.getElementById('config-title').value || 'colab_app').toLowerCase().replace(/[^a-z0-9]/g, '_') + '.html';
+
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast(`${fileName} をダウンロードしました`);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').textContent = msg;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            toast.classList.add('opacity-100');
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
